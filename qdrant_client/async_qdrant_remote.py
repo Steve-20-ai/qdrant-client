@@ -132,16 +132,31 @@ class AsyncQdrantRemote(AsyncQdrantBase):
                     category=UserWarning,
                     stacklevel=4,
                 )
-            if (
-                any([header_name == "api-key" for (header_name, _) in self._grpc_headers])
-                or "api-key" in self._rest_headers
+            if any(name.lower() == "api-key" for name in self._rest_headers) or any(
+                header_name.lower() == "api-key"
+                for (header_name, _) in self._grpc_headers
             ):
                 show_warning_once(
                     message="`api-key` has been passed in `headers`, but it will be overridden with `api_key` parameter value",
                     category=UserWarning,
                     stacklevel=4,
                 )
+            # REST sends the same name twice when the spelling differs, so the entry
+            # from `headers`/`metadata` has to go before `api_key` is stored.
+            self._rest_headers = {
+                name: value
+                for (name, value) in self._rest_headers.items()
+                if name.lower() != "api-key"
+            }
             self._rest_headers["api-key"] = api_key
+            # gRPC metadata keeps every entry it is handed and the server reads the
+            # first `api-key` it finds, so appending would leave the value from
+            # `headers` in front of `api_key` and authenticate with that one.
+            self._grpc_headers = [
+                (name, value)
+                for (name, value) in self._grpc_headers
+                if name.lower() != "api-key"
+            ]
             self._grpc_headers.append(("api-key", api_key))
         client_version = importlib.metadata.version("qdrant-client")
         python_version = platform.python_version()
